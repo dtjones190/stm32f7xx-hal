@@ -308,26 +308,22 @@ macro_rules! hal {
 
                             // SCL Low time
                             let scll = (base_clk_mhz / (2.0 * (target_freq_mhz))).ceil();
-                            let scll: u8 = match scll  {
-                                0.0..=256.0 => scll as u8 - 1,
-                                _ => 255,
-                            };
+                            let scll: u8 = if scll >= 0.0 && scll <= 256.0 {scll as u8 - 1} else {255};
+
                             let fscll_mhz: f32 = base_clk_mhz / (scll as f32 + 1.0);
                             
                             let sclh: u8 = scll;
-                            let fsclh_mhz: f32 = base_clk_mhz / (sclh as f32 + 1.0);
+                            let _fsclh_mhz: f32 = base_clk_mhz / (sclh as f32 + 1.0);
 
                             // Prescaler
                             let presc = base_clk_mhz / fscll_mhz;
-                            let presc: u8 = match presc  {
-                                0.0..=16.0 => sclh as u8 - 1,
-                                _ => 15,
-                            };
+                            let presc: u8 = if presc >= 0.0 && presc <= 16.0 {sclh as u8 - 1} else {15};
+                                
                             let fpresc_mhz = base_clk_mhz / (presc as f32 + 1.0);
 
                             // Update with the real values
-                            let fscll_mhz: f32 = fpresc_mhz / (scll as f32 + 1.0);
-                            let fsclh_mhz: f32 = fpresc_mhz / (sclh as f32 + 1.0);
+                            let _fscll_mhz: f32 = fpresc_mhz / (scll as f32 + 1.0);
+                            let _fsclh_mhz: f32 = fpresc_mhz / (sclh as f32 + 1.0);
 
                             self.i2c.timingr.write(|w| 
                                 w.presc()

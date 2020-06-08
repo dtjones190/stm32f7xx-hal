@@ -54,12 +54,12 @@ pub struct APB1 {
 }
 
 impl APB1 {
-    pub(crate) fn enr(&mut self) -> &rcc::APB1ENR {
+    pub fn enr(&mut self) -> &rcc::APB1ENR {
         // NOTE(unsafe) this proxy grants exclusive access to this register
         unsafe { &(*RCC::ptr()).apb1enr }
     }
 
-    pub(crate) fn rstr(&mut self) -> &rcc::APB1RSTR {
+    pub fn rstr(&mut self) -> &rcc::APB1RSTR {
         // NOTE(unsafe) this proxy grants exclusive access to this register
         unsafe { &(*RCC::ptr()).apb1rstr }
     }
@@ -71,12 +71,12 @@ pub struct APB2 {
 }
 
 impl APB2 {
-    pub(crate) fn enr(&mut self) -> &rcc::APB2ENR {
+    pub fn enr(&mut self) -> &rcc::APB2ENR {
         // NOTE(unsafe) this proxy grants exclusive access to this register
         unsafe { &(*RCC::ptr()).apb2enr }
     }
 
-    pub(crate) fn rstr(&mut self) -> &rcc::APB2RSTR {
+    pub fn rstr(&mut self) -> &rcc::APB2RSTR {
         // NOTE(unsafe) this proxy grants exclusive access to this register
         unsafe { &(*RCC::ptr()).apb2rstr }
     }
@@ -88,12 +88,12 @@ pub struct AHB1 {
 }
 
 impl AHB1 {
-    pub(crate) fn enr(&mut self) -> &rcc::AHB1ENR {
+    pub fn enr(&mut self) -> &rcc::AHB1ENR {
         // NOTE(unsafe) this proxy grants exclusive access to this register
         unsafe { &(*RCC::ptr()).ahb1enr }
     }
 
-    pub(crate) fn rstr(&mut self) -> &rcc::AHB1RSTR {
+    pub fn rstr(&mut self) -> &rcc::AHB1RSTR {
         // NOTE(unsafe) this proxy grants exclusive access to this register
         unsafe { &(*RCC::ptr()).ahb1rstr }
     }
@@ -105,12 +105,12 @@ pub struct AHB2 {
 }
 
 impl AHB2 {
-    pub(crate) fn enr(&mut self) -> &rcc::AHB2ENR {
+    pub fn enr(&mut self) -> &rcc::AHB2ENR {
         // NOTE(unsafe) this proxy grants exclusive access to this register
         unsafe { &(*RCC::ptr()).ahb2enr }
     }
 
-    pub(crate) fn rstr(&mut self) -> &rcc::AHB2RSTR {
+    pub fn rstr(&mut self) -> &rcc::AHB2RSTR {
         // NOTE(unsafe) this proxy grants exclusive access to this register
         unsafe { &(*RCC::ptr()).ahb2rstr }
     }
@@ -122,12 +122,12 @@ pub struct AHB3 {
 }
 
 impl AHB3 {
-    pub(crate) fn enr(&mut self) -> &rcc::AHB3ENR {
+    pub fn enr(&mut self) -> &rcc::AHB3ENR {
         // NOTE(unsafe) this proxy grants exclusive access to this register
         unsafe { &(*RCC::ptr()).ahb3enr }
     }
 
-    pub(crate) fn rstr(&mut self) -> &rcc::AHB3RSTR {
+    pub fn rstr(&mut self) -> &rcc::AHB3RSTR {
         // NOTE(unsafe) this proxy grants exclusive access to this register
         unsafe { &(*RCC::ptr()).ahb3rstr }
     }
@@ -508,6 +508,11 @@ pub struct Clocks {
 }
 
 impl Clocks {
+    /// Returns the frequency of the AHB1
+    pub fn hse(&self) -> Option<Hertz> {
+        self.hse
+    }
+
     /// Returns the frequency of the AHB1
     pub fn hclk(&self) -> Hertz {
         self.hclk
