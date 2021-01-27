@@ -1,37 +1,32 @@
 use core::fmt;
 use core::marker::PhantomData;
 use core::ops::Deref;
-#[cfg(feature="dma-support")]
 use core::ops::DerefMut;
-#[cfg(feature="dma-support")]
 use core::pin::Pin;
 use core::ptr;
 
-#[cfg(feature="dma-support")]
 use as_slice::{AsMutSlice, AsSlice};
 
-use crate::device;
-#[cfg(feature="dma-support")]
 use crate::dma;
 use crate::hal::prelude::*;
 use crate::hal::serial;
-#[cfg(feature="dma-support")]
+use crate::pac;
 use crate::state;
 use crate::time::U32Ext;
 use nb::block;
 
 #[cfg(any(feature = "device-selected",))]
-use crate::device::{RCC, USART1, USART2, UART4, USART3, USART6, UART7};
+use crate::pac::{RCC, UART4, UART5, UART7, USART1, USART2, USART3, USART6};
 
 #[cfg(any(feature = "device-selected",))]
 use crate::gpio::{
     gpioa::{PA0, PA1, PA10, PA2, PA3, PA9},
     gpiob::{PB10, PB11, PB6, PB7},
-    gpioc::{PC10, PC11, PC6, PC7},
-    gpiod::{PD5, PD6, PD8, PD9},
-    gpiog::{PG14, PG9},
+    gpioc::{PC10, PC11, PC12, PC6, PC7},
+    gpiod::{PD2, PD5, PD6, PD8, PD9},
     gpioe::{PE7, PE8},
     gpiof::{PF6, PF7},
+    gpiog::{PG14, PG9},
     Alternate, AF7, AF8,
 };
 
@@ -74,6 +69,7 @@ impl PinTx<USART3> for PC10<Alternate<AF7>> {}
 impl PinTx<USART3> for PD8<Alternate<AF7>> {}
 impl PinTx<UART4> for PA0<Alternate<AF8>> {}
 impl PinTx<UART4> for PC10<Alternate<AF8>> {}
+impl PinTx<UART5> for PC12<Alternate<AF8>> {}
 impl PinTx<USART6> for PC6<Alternate<AF8>> {}
 impl PinTx<USART6> for PG14<Alternate<AF8>> {}
 impl PinTx<UART7> for PE8<Alternate<AF8>> {}
@@ -89,6 +85,7 @@ impl PinRx<USART3> for PC11<Alternate<AF7>> {}
 impl PinRx<USART3> for PD9<Alternate<AF7>> {}
 impl PinRx<UART4> for PA1<Alternate<AF8>> {}
 impl PinRx<UART4> for PC11<Alternate<AF8>> {}
+impl PinRx<UART5> for PD2<Alternate<AF8>> {}
 impl PinRx<USART6> for PC7<Alternate<AF8>> {}
 impl PinRx<USART6> for PG9<Alternate<AF8>> {}
 impl PinRx<UART7> for PE7<Alternate<AF8>> {}
@@ -133,8 +130,9 @@ where
 
         usart.brr.write(|w| unsafe { w.bits(brr) });
 
-        // Reset other registers to disable advanced USART features
-        usart.cr2.reset();
+        // Set character match and reset other registers to disable advanced USART features
+        let ch = config.character_match.unwrap_or(0);
+        usart.cr2.write(|w| w.add().bits(ch));
 
         // Enable transmission and receiving
         usart
@@ -152,6 +150,8 @@ where
         match event {
             Event::Rxne => self.usart.cr1.modify(|_, w| w.rxneie().set_bit()),
             Event::Txe => self.usart.cr1.modify(|_, w| w.txeie().set_bit()),
+            Event::CharacterMatch => self.usart.cr1.modify(|_, w| w.cmie().set_bit()),
+            Event::Error => self.usart.cr3.modify(|_, w| w.eie().set_bit()),
         }
     }
 
@@ -160,6 +160,8 @@ where
         match event {
             Event::Rxne => self.usart.cr1.modify(|_, w| w.rxneie().clear_bit()),
             Event::Txe => self.usart.cr1.modify(|_, w| w.txeie().clear_bit()),
+            Event::CharacterMatch => self.usart.cr1.modify(|_, w| w.cmie().clear_bit()),
+            Event::Error => self.usart.cr3.modify(|_, w| w.eie().clear_bit()),
         }
     }
 
@@ -219,7 +221,6 @@ pub struct Rx<USART> {
     _usart: PhantomData<USART>,
 }
 
-#[cfg(feature="dma-support")]
 impl<USART> Rx<USART>
 where
     USART: Instance,
@@ -306,7 +307,6 @@ pub struct Tx<USART> {
     _usart: PhantomData<USART>,
 }
 
-#[cfg(feature="dma-support")]
 impl<USART> Tx<USART>
 where
     Self: dma::Target,
@@ -384,6 +384,7 @@ where
 pub struct Config {
     pub baud_rate: Bps,
     pub oversampling: Oversampling,
+    pub character_match: Option<u8>,
 }
 
 pub enum Oversampling {
@@ -396,6 +397,7 @@ impl Default for Config {
         Self {
             baud_rate: 115_200.bps(),
             oversampling: Oversampling::By16,
+            character_match: None,
         }
     }
 }
@@ -407,13 +409,17 @@ pub enum Event {
     Rxne,
     /// New data can be sent
     Txe,
+    /// Character match interrupt
+    CharacterMatch,
+    /// Error interrupt
+    Error,
 }
 
 /// Implemented by all USART instances
-pub trait Instance: Deref<Target = device::usart1::RegisterBlock> {
-    fn ptr() -> *const device::usart1::RegisterBlock;
-    fn select_sysclock(rcc: &device::rcc::RegisterBlock);
-    fn enable_clock(rcc: &device::rcc::RegisterBlock);
+pub trait Instance: Deref<Target = pac::usart1::RegisterBlock> {
+    fn ptr() -> *const pac::usart1::RegisterBlock;
+    fn select_sysclock(rcc: &pac::rcc::RegisterBlock);
+    fn enable_clock(rcc: &pac::rcc::RegisterBlock);
 }
 
 macro_rules! impl_instance {
@@ -422,15 +428,15 @@ macro_rules! impl_instance {
     )+) => {
         $(
             impl Instance for $USARTX {
-                fn ptr() -> *const device::usart1::RegisterBlock {
+                fn ptr() -> *const pac::usart1::RegisterBlock {
                     $USARTX::ptr()
                 }
 
-                fn select_sysclock(rcc: &device::rcc::RegisterBlock) {
+                fn select_sysclock(rcc: &pac::rcc::RegisterBlock) {
                     rcc.dckcfgr2.modify(|_, w| w.$usartXsel().bits(1));
                 }
 
-                fn enable_clock(rcc: &device::rcc::RegisterBlock) {
+                fn enable_clock(rcc: &pac::rcc::RegisterBlock) {
                     rcc.$apbXenr.modify(|_, w| w.$usartXen().set_bit());
                 }
             }
@@ -444,6 +450,7 @@ impl_instance! {
     USART2: (apb1enr, usart2sel, usart2en),
     USART3: (apb1enr, usart3sel, usart3en),
     UART4:  (apb1enr, uart4sel,  uart4en),
+    UART5:  (apb1enr, uart5sel,  uart5en),
     USART6: (apb2enr, usart6sel, usart6en),
     UART7:  (apb1enr, uart7sel,  uart7en),
 }

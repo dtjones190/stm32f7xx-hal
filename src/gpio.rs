@@ -2,7 +2,7 @@
 
 use core::marker::PhantomData;
 
-use crate::device::{EXTI, SYSCFG};
+use crate::pac::{EXTI, RCC, SYSCFG};
 
 /// Extension trait to split a GPIO peripheral in independent pins and registers
 pub trait GpioExt {
@@ -73,14 +73,14 @@ pub enum Speed {
 
 #[derive(Debug, PartialEq)]
 pub enum Edge {
-    RISING,
-    FALLING,
-    RISING_FALLING,
+    Rising,
+    Falling,
+    RisingFalling,
 }
 
 /// External Interrupt Pin
 pub trait ExtiPin {
-    fn make_interrupt_source(&mut self, syscfg: &mut SYSCFG);
+    fn make_interrupt_source(&mut self, syscfg: &mut SYSCFG, rcc: &mut RCC);
     fn trigger_on_edge(&mut self, exti: &mut EXTI, level: Edge);
     fn enable_interrupt(&mut self, exti: &mut EXTI);
     fn disable_interrupt(&mut self, exti: &mut EXTI);
@@ -97,9 +97,9 @@ macro_rules! gpio {
             use core::convert::Infallible;
 
             use embedded_hal::digital::v2::{InputPin, OutputPin, StatefulOutputPin, toggleable};
-            use crate::device::$GPIOX;
+            use crate::pac::$GPIOX;
 
-            use crate::device::{RCC, EXTI, SYSCFG};
+            use crate::pac::{RCC, EXTI, SYSCFG};
             use super::{
                 Alternate, Floating, GpioExt, Input, OpenDrain, Output, Speed,
                 PullDown, PullUp, PushPull, AF0, AF1, AF2, AF3, AF4, AF5, AF6, AF7, AF8, AF9, AF10,
@@ -199,7 +199,10 @@ macro_rules! gpio {
 
             impl<MODE> ExtiPin for $PXx<Input<MODE>> {
                 /// Make corresponding EXTI line sensitive to this pin
-                fn make_interrupt_source(&mut self, syscfg: &mut SYSCFG) {
+                fn make_interrupt_source(&mut self, syscfg: &mut SYSCFG, rcc: &mut RCC) {
+                    // SYSCFG clock must be enabled in order to do register writes
+                    rcc.apb2enr.modify(|_, w| w.syscfgen().set_bit());
+
                     let offset = 4 * (self.i % 4);
                     match self.i {
                         0..=3 => {
@@ -229,15 +232,15 @@ macro_rules! gpio {
                 /// Generate interrupt on rising edge, falling edge or both
                 fn trigger_on_edge(&mut self, exti: &mut EXTI, edge: Edge) {
                     match edge {
-                        Edge::RISING => {
+                        Edge::Rising => {
                             exti.rtsr.modify(|r, w| unsafe { w.bits(r.bits() | (1 << self.i)) });
                             exti.ftsr.modify(|r, w| unsafe { w.bits(r.bits() & !(1 << self.i)) });
                         },
-                        Edge::FALLING => {
+                        Edge::Falling => {
                             exti.ftsr.modify(|r, w| unsafe { w.bits(r.bits() | (1 << self.i)) });
                             exti.rtsr.modify(|r, w| unsafe { w.bits(r.bits() & !(1 << self.i)) });
                         },
-                        Edge::RISING_FALLING => {
+                        Edge::RisingFalling => {
                             exti.rtsr.modify(|r, w| unsafe { w.bits(r.bits() | (1 << self.i)) });
                             exti.ftsr.modify(|r, w| unsafe { w.bits(r.bits() | (1 << self.i)) });
                         }
@@ -623,7 +626,10 @@ macro_rules! gpio {
 
                 impl<MODE> ExtiPin for $PXi<Input<MODE>> {
                     /// Configure EXTI Line $i to trigger from this pin.
-                    fn make_interrupt_source(&mut self, syscfg: &mut SYSCFG) {
+                    fn make_interrupt_source(&mut self, syscfg: &mut SYSCFG, rcc: &mut RCC) {
+                        // SYSCFG clock must be enabled in order to do register writes
+                        rcc.apb2enr.modify(|_, w| w.syscfgen().set_bit());
+
                         let offset = 4 * ($i % 4);
                         syscfg.$exticri.modify(|r, w| unsafe {
                             let mut exticr = r.bits();
@@ -635,15 +641,15 @@ macro_rules! gpio {
                     /// Generate interrupt on rising edge, falling edge or both
                     fn trigger_on_edge(&mut self, exti: &mut EXTI, edge: Edge) {
                         match edge {
-                            Edge::RISING => {
+                            Edge::Rising => {
                                 exti.rtsr.modify(|r, w| unsafe { w.bits(r.bits() | (1 << $i)) });
                                 exti.ftsr.modify(|r, w| unsafe { w.bits(r.bits() & !(1 << $i)) });
                             },
-                            Edge::FALLING => {
+                            Edge::Falling => {
                                 exti.ftsr.modify(|r, w| unsafe { w.bits(r.bits() | (1 << $i)) });
                                 exti.rtsr.modify(|r, w| unsafe { w.bits(r.bits() & !(1 << $i)) });
                             },
-                            Edge::RISING_FALLING => {
+                            Edge::RisingFalling => {
                                 exti.rtsr.modify(|r, w| unsafe { w.bits(r.bits() | (1 << $i)) });
                                 exti.ftsr.modify(|r, w| unsafe { w.bits(r.bits() | (1 << $i)) });
                             }
@@ -674,6 +680,7 @@ macro_rules! gpio {
 #[cfg(any(
     feature = "stm32f722",
     feature = "stm32f723",
+    feature = "stm32f730",
     feature = "stm32f732",
     feature = "stm32f733",
     feature = "stm32f745",
@@ -708,6 +715,7 @@ gpio!(GPIOA, gpioa, gpioaen, PA, 0, [
 #[cfg(any(
     feature = "stm32f722",
     feature = "stm32f723",
+    feature = "stm32f730",
     feature = "stm32f732",
     feature = "stm32f733",
     feature = "stm32f745",
@@ -742,6 +750,7 @@ gpio!(GPIOB, gpiob, gpioben, PB, 1, [
 #[cfg(any(
     feature = "stm32f722",
     feature = "stm32f723",
+    feature = "stm32f730",
     feature = "stm32f732",
     feature = "stm32f733",
     feature = "stm32f745",
@@ -776,6 +785,7 @@ gpio!(GPIOC, gpioc, gpiocen, PC, 2, [
 #[cfg(any(
     feature = "stm32f722",
     feature = "stm32f723",
+    feature = "stm32f730",
     feature = "stm32f732",
     feature = "stm32f733",
     feature = "stm32f745",
@@ -810,6 +820,7 @@ gpio!(GPIOD, gpiod, gpioden, pd, 3, [
 #[cfg(any(
     feature = "stm32f722",
     feature = "stm32f723",
+    feature = "stm32f730",
     feature = "stm32f732",
     feature = "stm32f733",
     feature = "stm32f745",
@@ -844,6 +855,7 @@ gpio!(GPIOE, gpioe, gpioeen, PE, 4, [
 #[cfg(any(
     feature = "stm32f722",
     feature = "stm32f723",
+    feature = "stm32f730",
     feature = "stm32f732",
     feature = "stm32f733",
     feature = "stm32f745",
@@ -878,6 +890,7 @@ gpio!(GPIOF, gpiof, gpiofen, PF, 5, [
 #[cfg(any(
     feature = "stm32f722",
     feature = "stm32f723",
+    feature = "stm32f730",
     feature = "stm32f732",
     feature = "stm32f733",
     feature = "stm32f745",
@@ -912,6 +925,7 @@ gpio!(GPIOG, gpiog, gpiogen, PG, 6,[
 #[cfg(any(
     feature = "stm32f722",
     feature = "stm32f723",
+    feature = "stm32f730",
     feature = "stm32f732",
     feature = "stm32f733",
     feature = "stm32f745",
@@ -946,6 +960,7 @@ gpio!(GPIOH, gpioh, gpiohen, PH, 7, [
 #[cfg(any(
     feature = "stm32f722",
     feature = "stm32f723",
+    feature = "stm32f730",
     feature = "stm32f732",
     feature = "stm32f733",
     feature = "stm32f745",

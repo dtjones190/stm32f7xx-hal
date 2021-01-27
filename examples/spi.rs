@@ -5,14 +5,14 @@ extern crate panic_semihosting;
 
 use cortex_m_rt::entry;
 use stm32f7xx_hal::{
-    device,
+    pac,
     prelude::*,
     spi::{self, Spi},
 };
 
 #[entry]
 fn main() -> ! {
-    let p = device::Peripherals::take().unwrap();
+    let p = pac::Peripherals::take().unwrap();
 
     let mut rcc = p.RCC.constrain();
 
@@ -35,7 +35,7 @@ fn main() -> ! {
 
     // Initialize SPI
     let mut spi = Spi::new(p.SPI3, (sck, miso, mosi)).enable::<u8>(
-        &mut rcc,
+        &mut rcc.apb1,
         spi::ClockDivider::DIV32,
         spi::Mode {
             polarity: spi::Polarity::IdleHigh,

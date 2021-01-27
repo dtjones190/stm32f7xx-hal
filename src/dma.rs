@@ -11,12 +11,13 @@ use core::{
 use as_slice::AsSlice;
 
 use crate::{
-    device::{
+    pac::{
         self,
         dma2::{self, st::cr},
         Interrupt, DMA1, DMA2, NVIC,
     },
-    rcc::Rcc,
+    qspi,
+    rcc::{sealed::RccBus, Enable, Reset},
     serial, spi, state,
 };
 
@@ -31,7 +32,7 @@ pub struct DMA<I> {
 
 impl<I> DMA<I>
 where
-    I: Instance,
+    I: Instance + Enable + Reset,
 {
     /// Creates a new instance of `DMA`
     ///
@@ -55,7 +56,7 @@ pub struct Handle<I, State> {
 
 impl<I> Handle<I, state::Disabled>
 where
-    I: Instance,
+    I: Instance + Reset + Enable,
 {
     fn new(instance: I) -> Self {
         Self {
@@ -65,8 +66,9 @@ where
     }
 
     /// Initializes the DMA instance
-    pub fn enable(self, rcc: &mut Rcc) -> Handle<I, state::Enabled> {
-        I::enable(rcc);
+    pub fn enable(self, apb: &mut <I as RccBus>::Bus) -> Handle<I, state::Enabled> {
+        I::reset(apb);
+        I::enable(apb);
 
         Handle {
             dma: self.dma,
@@ -389,11 +391,58 @@ macro_rules! impl_target {
 //
 // There's probably a smart way to achieve this, but I decided to declare
 // victory and leave this problem to someone who actually needs this capability.
+impl_target!(
+    // SPI receive
+    spi::Rx<pac::SPI1>, DMA2, Stream0, Channel3, DMA2_STREAM0;
+    // SPI1 for DMA2, stream 2, channel 3 is unsupported
+    spi::Rx<pac::SPI2>, DMA1, Stream3, Channel0, DMA1_STREAM3;
+    spi::Rx<pac::SPI3>, DMA1, Stream0, Channel0, DMA1_STREAM0;
+    // SPI3 for DMA1, stream 2, channel 0 is unsupported
+    spi::Rx<pac::SPI4>, DMA2, Stream0, Channel4, DMA2_STREAM0;
+    // SPI4 for DMA2, stream 3, channel 5 is unsupported
+    spi::Rx<pac::SPI5>, DMA2, Stream3, Channel2, DMA2_STREAM3;
+    // SPI5 for DMA2, stream 5, channel 7 is unsupported
+
+    // SPI transmit
+    spi::Tx<pac::SPI1>, DMA2, Stream3, Channel3, DMA2_STREAM3;
+    // SPI1 for DMA2, stream 5, channel 3 is unsupported
+    spi::Tx<pac::SPI2>, DMA1, Stream4, Channel0, DMA1_STREAM4;
+    spi::Tx<pac::SPI3>, DMA1, Stream5, Channel0, DMA1_STREAM5;
+    // SPI3 for DMA1, stream 7, channel 0 is unsupported
+    spi::Tx<pac::SPI4>, DMA2, Stream1, Channel4, DMA2_STREAM1;
+    // SPI4 for DMA2, stream 4, channel 5 is unsupported
+    spi::Tx<pac::SPI5>, DMA2, Stream4, Channel2, DMA2_STREAM4;
+    // SPI5 for DMA2, stream 6, channel 7 is unsupported
+
+    // USART receive
+    serial::Rx<pac::USART1>, DMA2, Stream2, Channel4, DMA2_STREAM2;
+    // USART1 for DMA2, stream 5, channel 4 is unsupported
+    serial::Rx<pac::USART2>, DMA1, Stream5, Channel4, DMA1_STREAM5;
+    serial::Rx<pac::USART3>, DMA1, Stream1, Channel4, DMA1_STREAM1;
+    serial::Rx<pac::UART4>, DMA1, Stream2, Channel4, DMA1_STREAM2;
+    serial::Rx<pac::UART5>, DMA1, Stream0, Channel4, DMA1_STREAM0;
+    serial::Rx<pac::USART6>, DMA2, Stream1, Channel5, DMA2_STREAM1;
+    // USART6 for DMA2, stream 2, channel 5 is unsupported
+    serial::Rx<pac::UART7>, DMA1, Stream3, Channel5, DMA1_STREAM3;
+    serial::Rx<pac::UART8>, DMA1, Stream6, Channel5, DMA1_STREAM6;
+
+    // USART transmit
+    serial::Tx<pac::USART1>, DMA2, Stream7, Channel4, DMA2_STREAM7;
+    serial::Tx<pac::USART2>, DMA1, Stream6, Channel4, DMA1_STREAM6;
+    serial::Tx<pac::USART3>, DMA1, Stream3, Channel4, DMA1_STREAM3;
+    // USART3 for DMA1, stream 4, channel 7 is unsupported
+    serial::Tx<pac::UART4>,  DMA1, Stream4, Channel4, DMA1_STREAM4;
+    serial::Tx<pac::UART5>,  DMA1, Stream7, Channel4, DMA1_STREAM7;
+    serial::Tx<pac::USART6>, DMA2, Stream6, Channel5, DMA2_STREAM6;
+    // USART6 for DMA2, stream 7, channel 5 is unsupported
+    serial::Tx<pac::UART7>,  DMA1, Stream1, Channel5, DMA1_STREAM1;
+    serial::Tx<pac::UART8>,  DMA1, Stream0, Channel5, DMA1_STREAM0;
+
+    // QUADSPI is half-duplex, uses one channel for both send/receive
+    qspi::RxTx<pac::QUADSPI>, DMA2, Stream7, Channel3, DMA2_STREAM7;
+);
+
 #[cfg(any(
-    feature = "stm32f722",
-    feature = "stm32f723",
-    feature = "stm32f732",
-    feature = "stm32f733",
     feature = "stm32f745",
     feature = "stm32f746",
     feature = "stm32f756",
@@ -405,53 +454,8 @@ macro_rules! impl_target {
     feature = "stm32f779",
 ))]
 impl_target!(
-    // SPI receive
-    spi::Rx<device::SPI1>, DMA2, Stream0, Channel3, DMA2_STREAM0;
-    // SPI1 for DMA2, stream 2, channel 3 is unsupported
-    spi::Rx<device::SPI2>, DMA1, Stream3, Channel0, DMA1_STREAM3;
-    spi::Rx<device::SPI3>, DMA1, Stream0, Channel0, DMA1_STREAM0;
-    // SPI3 for DMA1, stream 2, channel 0 is unsupported
-    spi::Rx<device::SPI4>, DMA2, Stream0, Channel4, DMA2_STREAM0;
-    // SPI4 for DMA2, stream 3, channel 5 is unsupported
-    spi::Rx<device::SPI5>, DMA2, Stream3, Channel2, DMA2_STREAM3;
-    // SPI5 for DMA2, stream 5, channel 7 is unsupported
-    spi::Rx<device::SPI6>, DMA2, Stream6, Channel1, DMA2_STREAM6;
-
-    // SPI transmit
-    spi::Tx<device::SPI1>, DMA2, Stream3, Channel3, DMA2_STREAM3;
-    // SPI1 for DMA2, stream 5, channel 3 is unsupported
-    spi::Tx<device::SPI2>, DMA1, Stream4, Channel0, DMA1_STREAM4;
-    spi::Tx<device::SPI3>, DMA1, Stream5, Channel0, DMA1_STREAM5;
-    // SPI3 for DMA1, stream 7, channel 0 is unsupported
-    spi::Tx<device::SPI4>, DMA2, Stream1, Channel4, DMA2_STREAM1;
-    // SPI4 for DMA2, stream 4, channel 5 is unsupported
-    spi::Tx<device::SPI5>, DMA2, Stream4, Channel2, DMA2_STREAM4;
-    // SPI5 for DMA2, stream 6, channel 7 is unsupported
-    spi::Tx<device::SPI6>, DMA2, Stream5, Channel1, DMA2_STREAM5;
-
-    // USART receive
-    serial::Rx<device::USART1>, DMA2, Stream2, Channel4, DMA2_STREAM2;
-    // USART1 for DMA2, stream 5, channel 4 is unsupported
-    serial::Rx<device::USART2>, DMA1, Stream5, Channel4, DMA1_STREAM5;
-    serial::Rx<device::USART3>, DMA1, Stream1, Channel4, DMA1_STREAM1;
-    serial::Rx<device::UART4>, DMA1, Stream2, Channel4, DMA1_STREAM2;
-    serial::Rx<device::UART5>, DMA1, Stream0, Channel4, DMA1_STREAM0;
-    serial::Rx<device::USART6>, DMA2, Stream1, Channel5, DMA2_STREAM1;
-    // USART6 for DMA2, stream 2, channel 5 is unsupported
-    serial::Rx<device::UART7>, DMA1, Stream3, Channel5, DMA1_STREAM3;
-    serial::Rx<device::UART8>, DMA1, Stream6, Channel5, DMA1_STREAM6;
-
-    // USART transmit
-    serial::Tx<device::USART1>, DMA2, Stream7, Channel4, DMA2_STREAM7;
-    serial::Tx<device::USART2>, DMA1, Stream6, Channel4, DMA1_STREAM6;
-    serial::Tx<device::USART3>, DMA1, Stream3, Channel4, DMA1_STREAM3;
-    // USART3 for DMA1, stream 4, channel 7 is unsupported
-    serial::Tx<device::UART4>,  DMA1, Stream4, Channel4, DMA1_STREAM4;
-    serial::Tx<device::UART5>,  DMA1, Stream7, Channel4, DMA1_STREAM7;
-    serial::Tx<device::USART6>, DMA2, Stream6, Channel5, DMA2_STREAM6;
-    // USART6 for DMA2, stream 7, channel 5 is unsupported
-    serial::Tx<device::UART7>,  DMA1, Stream1, Channel5, DMA1_STREAM1;
-    serial::Tx<device::UART8>,  DMA1, Stream0, Channel5, DMA1_STREAM0;
+    spi::Rx<pac::SPI6>, DMA2, Stream6, Channel1, DMA2_STREAM6;
+    spi::Tx<pac::SPI6>, DMA2, Stream5, Channel1, DMA2_STREAM5;
 );
 
 /// Implemented for all types that represent DMA streams
@@ -578,7 +582,7 @@ macro_rules! impl_channel {
                 {
                     // This is safe, as long as the macro caller passes in valid
                     // channel numbers.
-                    unsafe { w.chsel().bits($number) }
+                    w.chsel().bits($number)
                 }
             }
         )*
@@ -600,26 +604,20 @@ impl_channel!(
 ///
 /// This is an internal trait. End users neither need to implement it, nor use
 /// it directly.
-pub trait Instance {
-    fn enable(rcc: &mut Rcc);
-}
+pub trait Instance {}
 
 macro_rules! impl_instance {
-    ($($name:ty, $reset_reg:ident, $enable_reg:ident;)*) => {
+    ($($name:ty;)*) => {
         $(
             impl Instance for $name {
-                fn enable(rcc: &mut Rcc) {
-                    rcc.ahb1.rstr().modify(|_, w| w.$reset_reg().clear_bit());
-                    rcc.ahb1.enr().modify(|_, w| w.$enable_reg().enabled());
-                }
             }
         )*
     }
 }
 
 impl_instance!(
-    DMA1, dma1rst, dma1en;
-    DMA2, dma2rst, dma2en;
+    DMA1;
+    DMA2;
 );
 
 /// Used by [`Transfer::enable_interrupts`] to identify DMA interrupts

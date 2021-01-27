@@ -2,7 +2,7 @@
 //!
 //! See chapter 32 in the STM32F746 Reference Manual.
 
-pub use crate::device::spi1::cr1::BR_A as ClockDivider;
+pub use crate::pac::spi1::cr1::BR_A as ClockDivider;
 pub use embedded_hal::spi::{Mode, Phase, Polarity};
 
 use core::{fmt, marker::PhantomData, ops::DerefMut, pin::Pin, ptr};
@@ -14,16 +14,12 @@ use embedded_hal::{
 };
 
 use crate::{
-    device::{self, spi1::cr2},
-    gpio::{
-        self,
-        Alternate, AF5, AF6, AF7,
-    },
-    rcc::Rcc,
+    gpio::{self, Alternate, AF5, AF6, AF7},
+    pac::{self, spi1::cr2},
+    rcc::{sealed::RccBus, Enable},
     state,
 };
 
-#[cfg(feature="dma-support")]
 use crate::dma;
 
 /// Entry point to the SPI API
@@ -35,7 +31,7 @@ pub struct Spi<I, P, State> {
 
 impl<I, P> Spi<I, P, state::Disabled>
 where
-    I: Instance,
+    I: Instance + Enable,
     P: Pins<I>,
 {
     /// Create a new instance of the SPI API
@@ -50,19 +46,18 @@ where
     /// Initialize the SPI peripheral
     pub fn enable<Word>(
         self,
-        rcc: &mut Rcc,
+        apb: &mut <I as RccBus>::Bus,
         clock_divider: ClockDivider,
         mode: Mode,
     ) -> Spi<I, P, Enabled<Word>>
     where
         Word: SupportedWordSize,
     {
+        I::enable(apb);
         let cpol = mode.polarity == Polarity::IdleHigh;
         let cpha = mode.phase == Phase::CaptureOnSecondTransition;
 
-        self.spi.enable_clock(rcc);
-        self.spi
-            .configure::<Word>(clock_divider.into(), cpol, cpha);
+        self.spi.configure::<Word>(clock_divider.into(), cpol, cpha);
 
         Spi {
             spi: self.spi,
@@ -72,7 +67,6 @@ where
     }
 }
 
-#[cfg(feature="dma-support")]
 impl<I, P, Word> Spi<I, P, Enabled<Word>>
 where
     I: Instance,
@@ -234,7 +228,6 @@ where
 ///
 /// Users of this crate should not implement this trait.
 pub trait Instance {
-    fn enable_clock(&self, rcc: &mut Rcc);
     fn configure<Word>(&self, br: u8, cpol: bool, cpha: bool)
     where
         Word: SupportedWordSize;
@@ -288,10 +281,6 @@ macro_rules! impl_instance {
     ) => {
         $(
             impl Instance for $name {
-                fn enable_clock(&self, rcc: &mut Rcc) {
-                    rcc.$bus.rstr().modify(|_, w| w.$reset().clear_bit());
-                    rcc.$bus.enr().modify(|_, w| w.$enable().enabled());
-                }
 
                 // I don't like putting this much code into the macro, but I
                 // have to: There are two different SPI variants in the PAC, and
@@ -454,40 +443,28 @@ macro_rules! impl_instance {
     }
 }
 
-#[cfg(any(
-    feature = "stm32f722",
-    feature = "stm32f723",
-    feature = "stm32f732",
-    feature = "stm32f733",
-    feature = "stm32f745",
-    feature = "stm32f746",
-    feature = "stm32f756",
-    feature = "stm32f765",
-    feature = "stm32f767",
-    feature = "stm32f769",
-    feature = "stm32f777",
-    feature = "stm32f778",
-    feature = "stm32f779",
-))]
 impl_instance!(
-    device::SPI1 {
+    pac::SPI1 {
         regs: (apb2, spi1rst, spi1en),
         pins: {
             SCK: [
                 gpio::gpioa::PA5<Alternate<AF5>>,
                 gpio::gpiob::PB3<Alternate<AF5>>,
+                gpio::gpiog::PG11<Alternate<AF5>>,
             ],
             MISO: [
                 gpio::gpioa::PA6<Alternate<AF5>>,
                 gpio::gpiob::PB4<Alternate<AF5>>,
+                gpio::gpiog::PG9<Alternate<AF5>>,
             ],
             MOSI: [
                 gpio::gpioa::PA7<Alternate<AF5>>,
                 gpio::gpiob::PB5<Alternate<AF5>>,
+                gpio::gpiod::PD7<Alternate<AF5>>,
             ],
         }
     }
-    device::SPI2 {
+    pac::SPI2 {
         regs: (apb1, spi2rst, spi2en),
         pins: {
             SCK: [
@@ -510,7 +487,7 @@ impl_instance!(
             ],
         }
     }
-    device::SPI3 {
+    pac::SPI3 {
         regs: (apb1, spi3rst, spi3en),
         pins: {
             SCK: [
@@ -529,7 +506,7 @@ impl_instance!(
             ],
         }
     }
-    device::SPI4 {
+    pac::SPI4 {
         regs: (apb2, spi4rst, spi4en),
         pins: {
             SCK: [
@@ -546,7 +523,7 @@ impl_instance!(
             ],
         }
     }
-    device::SPI5 {
+    pac::SPI5 {
         regs: (apb2, spi5rst, spi5en),
         pins: {
             SCK: [
@@ -566,9 +543,6 @@ impl_instance!(
 );
 
 #[cfg(any(
-    feature = "stm32f723",
-    feature = "stm32f732",
-    feature = "stm32f733",
     feature = "stm32f745",
     feature = "stm32f746",
     feature = "stm32f756",
@@ -580,7 +554,7 @@ impl_instance!(
     feature = "stm32f779",
 ))]
 impl_instance!(
-    device::SPI6 {
+    pac::SPI6 {
         regs: (apb2, spi6rst, spi6en),
         pins: {
             SCK: [
@@ -736,7 +710,6 @@ where
 }
 
 /// The resources that an ongoing transfer needs exclusive access to
-#[cfg(feature="dma-support")]
 pub struct TransferResources<Word, I, P, Rx: dma::Target, Tx: dma::Target, Buffer> {
     pub rx_stream: Rx::Stream,
     pub tx_stream: Tx::Stream,
@@ -747,7 +720,6 @@ pub struct TransferResources<Word, I, P, Rx: dma::Target, Tx: dma::Target, Buffe
 // As `TransferResources` is used in the error variant of `Result`, it needs a
 // `Debug` implementation to enable stuff like `unwrap` and `expect`. This can't
 // be derived without putting requirements on the type arguments.
-#[cfg(feature="dma-support")]
 impl<Word, I, P, Rx, Tx, Buffer> fmt::Debug for TransferResources<Word, I, P, Rx, Tx, Buffer>
 where
     Rx: dma::Target,

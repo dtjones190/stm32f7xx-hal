@@ -16,15 +16,15 @@ use core::pin::Pin;
 use cortex_m::{asm, interrupt};
 use cortex_m_rt::entry;
 use stm32f7xx_hal::{
-    device,
     dma::{self, DMA},
+    pac,
     prelude::*,
     serial::{self, Serial},
 };
 
 #[entry]
 fn main() -> ! {
-    let p = device::Peripherals::take().unwrap();
+    let p = pac::Peripherals::take().unwrap();
 
     let mut rcc = p.RCC.constrain();
 
@@ -33,7 +33,7 @@ fn main() -> ! {
     let mut rx_stream = dma.streams.stream1;
     let mut tx_stream = dma.streams.stream3;
 
-    let dma = dma.handle.enable(&mut rcc);
+    let dma = dma.handle.enable(&mut rcc.ahb1);
 
     let clocks = rcc.cfgr.sysclk(216.mhz()).freeze();
 
@@ -49,6 +49,7 @@ fn main() -> ! {
         serial::Config {
             baud_rate: 115_200.bps(),
             oversampling: serial::Oversampling::By16,
+            character_match: None,
         },
     );
     let (mut tx, mut rx) = serial.split();

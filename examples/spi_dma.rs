@@ -8,15 +8,15 @@ use core::pin::Pin;
 use cortex_m::{asm, interrupt};
 use cortex_m_rt::entry;
 use stm32f7xx_hal::{
-    device,
     dma::{self, DMA},
+    pac,
     prelude::*,
     spi::{self, Spi},
 };
 
 #[entry]
 fn main() -> ! {
-    let p = device::Peripherals::take().unwrap();
+    let p = pac::Peripherals::take().unwrap();
 
     let mut rcc = p.RCC.constrain();
 
@@ -39,14 +39,14 @@ fn main() -> ! {
     let mut rx_stream = dma.streams.stream0;
     let mut tx_stream = dma.streams.stream5;
 
-    let dma = dma.handle.enable(&mut rcc);
+    let dma = dma.handle.enable(&mut rcc.ahb1);
 
     // Set NCS pin to high (disabled) initially
     ncs.set_high().unwrap();
 
     // Initialize SPI
     let mut spi = Spi::new(p.SPI3, (sck, miso, mosi)).enable(
-        &mut rcc,
+        &mut rcc.apb1,
         spi::ClockDivider::DIV32,
         spi::Mode {
             polarity: spi::Polarity::IdleHigh,

@@ -1,6 +1,6 @@
 //! HAL for the STM32F7xx family of microcontrollers
 
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 #![allow(non_camel_case_types)]
 
 #[cfg(not(feature = "device-selected"))]
@@ -8,6 +8,7 @@ compile_error!(
     "This crate requires one of the following device features enabled:
         stm32f722
         stm32f723
+        stm32f730
         stm32f732
         stm32f733
         stm32f745
@@ -25,56 +26,90 @@ compile_error!(
 pub(crate) use embedded_hal as hal;
 
 #[cfg(feature = "stm32f722")]
-pub use stm32f7::stm32f7x2 as device;
+pub use stm32f7::stm32f7x2 as pac;
 
 #[cfg(feature = "stm32f723")]
-pub use stm32f7::stm32f7x3 as device;
+pub use stm32f7::stm32f7x3 as pac;
+
+#[cfg(feature = "stm32f730")]
+pub use stm32f7::stm32f730 as pac;
 
 #[cfg(feature = "stm32f732")]
-pub use stm32f7::stm32f7x2 as device;
+pub use stm32f7::stm32f7x2 as pac;
 
 #[cfg(feature = "stm32f733")]
-pub use stm32f7::stm32f7x3 as device;
+pub use stm32f7::stm32f7x3 as pac;
 
 #[cfg(feature = "stm32f745")]
-pub use stm32f7::stm32f745 as device;
+pub use stm32f7::stm32f745 as pac;
 
 #[cfg(feature = "stm32f746")]
-pub use stm32f7::stm32f7x6 as device;
+pub use stm32f7::stm32f7x6 as pac;
 
 #[cfg(feature = "stm32f756")]
-pub use stm32f7::stm32f7x6 as device;
+pub use stm32f7::stm32f7x6 as pac;
 
 #[cfg(feature = "stm32f765")]
-pub use stm32f7::stm32f765 as device;
+pub use stm32f7::stm32f765 as pac;
 
 #[cfg(feature = "stm32f767")]
-pub use stm32f7::stm32f7x7 as device;
+pub use stm32f7::stm32f7x7 as pac;
 
 #[cfg(feature = "stm32f769")]
-pub use stm32f7::stm32f7x9 as device;
+pub use stm32f7::stm32f7x9 as pac;
 
 #[cfg(feature = "stm32f777")]
-pub use stm32f7::stm32f7x7 as device;
+pub use stm32f7::stm32f7x7 as pac;
 
 #[cfg(feature = "stm32f778")]
-pub use stm32f7::stm32f7x9 as device;
+pub use stm32f7::stm32f7x9 as pac;
 
 #[cfg(feature = "stm32f779")]
-pub use stm32f7::stm32f7x9 as device;
+pub use stm32f7::stm32f7x9 as pac;
 
 // Enable use of interrupt macro
 #[cfg(feature = "rt")]
-pub use crate::device::interrupt;
+pub use crate::pac::interrupt;
 
 #[cfg(feature = "device-selected")]
 pub mod delay;
 
-#[cfg(feature = "dma-support")]
+#[cfg(feature = "device-selected")]
 pub mod dma;
+
+#[cfg(all(feature = "device-selected", feature = "fmc"))]
+pub mod fmc;
 
 #[cfg(feature = "device-selected")]
 pub mod gpio;
+
+#[cfg(all(
+    feature = "usb_fs",
+    any(
+        feature = "stm32f722",
+        feature = "stm32f723",
+        feature = "stm32f730",
+        feature = "stm32f732",
+        feature = "stm32f733",
+        feature = "stm32f746",
+        feature = "stm32f767",
+    )
+))]
+pub mod otg_fs;
+
+#[cfg(all(
+    feature = "usb_hs",
+    any(
+        feature = "stm32f722",
+        feature = "stm32f723",
+        feature = "stm32f730",
+        feature = "stm32f732",
+        feature = "stm32f733",
+        feature = "stm32f746",
+        feature = "stm32f767",
+    )
+))]
+pub mod otg_hs;
 
 #[cfg(feature = "device-selected")]
 pub mod prelude;
@@ -83,9 +118,12 @@ pub mod prelude;
 pub mod rcc;
 
 #[cfg(feature = "device-selected")]
+pub mod rtc;
+
+#[cfg(feature = "device-selected")]
 pub mod serial;
 
-#[cfg(feature = "dma-support")]
+#[cfg(feature = "device-selected")]
 pub mod spi;
 
 #[cfg(feature = "device-selected")]
@@ -100,8 +138,27 @@ pub mod signature;
 #[cfg(feature = "device-selected")]
 pub mod i2c;
 
+#[cfg(feature = "device-selected")]
+pub mod rng;
+
+#[cfg(feature = "device-selected")]
+pub mod qspi;
+
 #[cfg(feature = "ltdc")]
 pub mod ltdc;
+
+#[cfg(all(
+    feature = "device-selected",
+    not(any(
+        feature = "stm32f765",
+        feature = "stm32f767",
+        feature = "stm32f769",
+        feature = "stm32f777",
+        feature = "stm32f778",
+        feature = "stm32f779",
+    ))
+))]
+pub mod flash;
 
 pub mod state {
     /// Indicates that a peripheral is enabled
